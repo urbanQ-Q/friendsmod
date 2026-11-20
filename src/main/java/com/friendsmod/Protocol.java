@@ -89,7 +89,7 @@ public final class Protocol {
         for (String f : FriendManager.friends) {
             if (f.equalsIgnoreCase(me) || !isOnline(mc, f)) continue;
             FriendManager.Info i = FriendManager.info(mc, f);
-            if (i.near) continue; // jest blisko (<= 20) - lokalizacja niepotrzebna
+            if (i.loaded) continue; // znajomy jest w zasiegu renderowania - widzi nas jako encje
             enqueue(f, String.format(Locale.ROOT, "%s%s;%s;%d;%d;%d;%s", MARK, "POS", me,
                     (int) Math.floor(pos.x), (int) Math.floor(pos.y), (int) Math.floor(pos.z), dim));
         }

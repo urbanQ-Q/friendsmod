@@ -17,7 +17,6 @@ import java.util.*;
 import java.util.regex.Pattern;
 
 public final class FriendManager {
-    public static final double FAR_DISTANCE = 20.0;
     private static final Pattern NAME = Pattern.compile("[A-Za-z0-9_]{3,16}");
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final Path FILE = FabricLoader.getInstance().getConfigDir().resolve("friendsmod.json");
@@ -27,6 +26,12 @@ public final class FriendManager {
     public static final Set<String> outgoing = newSet();
     public static final Map<String, Loc> locations = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
     public static String messageCommand = "msg";
+    /** Od ilu metrow pokazywac lokalizacje/metry znajomego (ustawienia). */
+    public static int showFromMeters = 20;
+    /** Metry nad nickiem znajomego (w zasiegu renderowania). */
+    public static boolean nametagMeters = true;
+    /** Znaczniki na ekranie dla znajomych poza zasiegiem renderowania. */
+    public static boolean markers = true;
     /** Zwiekszane przy kazdej zmianie list - ekran odswieza sie po zmianie. */
     public static int version = 0;
 
@@ -38,6 +43,9 @@ public final class FriendManager {
         List<String> incoming = new ArrayList<>();
         List<String> outgoing = new ArrayList<>();
         String messageCommand = "msg";
+        int showFromMeters = 20;
+        boolean nametagMeters = true;
+        boolean markers = true;
     }
 
     private static Set<String> newSet() {
@@ -55,6 +63,9 @@ public final class FriendManager {
             incoming.addAll(d.incoming);
             outgoing.addAll(d.outgoing);
             if (d.messageCommand != null && !d.messageCommand.isBlank()) messageCommand = d.messageCommand;
+            showFromMeters = Math.max(0, Math.min(1000, d.showFromMeters));
+            nametagMeters = d.nametagMeters;
+            markers = d.markers;
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -66,6 +77,9 @@ public final class FriendManager {
         d.incoming.addAll(incoming);
         d.outgoing.addAll(outgoing);
         d.messageCommand = messageCommand;
+        d.showFromMeters = showFromMeters;
+        d.nametagMeters = nametagMeters;
+        d.markers = markers;
         try (Writer w = Files.newBufferedWriter(FILE, StandardCharsets.UTF_8)) {
             GSON.toJson(d, w);
         } catch (IOException e) {
@@ -144,6 +158,7 @@ public final class FriendManager {
 
     public static class Info {
         public boolean online;
+        public boolean loaded;    // encja gracza jest w zasiegu renderowania
         public boolean known;     // znamy pozycje (encja w zasiegu lub niedawna wiadomosc POS)
         public boolean sameDim;
         public boolean far;       // inny wymiar albo dalej niz 20 kratek
@@ -170,6 +185,7 @@ public final class FriendManager {
         String myDim = currentDim(mc);
         if (entity != null) {
             i.known = true;
+            i.loaded = true;
             i.pos = entity.getPos();
             i.dim = myDim;
             i.sameDim = true;
@@ -185,7 +201,7 @@ public final class FriendManager {
         if (i.known) {
             if (i.sameDim) {
                 i.dist = i.pos.distanceTo(mc.player.getPos());
-                i.far = i.dist > FAR_DISTANCE;
+                i.far = i.dist > showFromMeters;
                 i.near = !i.far;
             } else {
                 i.far = true;

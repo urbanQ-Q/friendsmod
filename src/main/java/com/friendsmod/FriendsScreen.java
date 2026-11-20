@@ -3,7 +3,10 @@ package com.friendsmod;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.client.gui.widget.ButtonWidget;
+import net.minecraft.client.gui.widget.SliderWidget;
 import net.minecraft.client.gui.widget.TextFieldWidget;
+import net.minecraft.client.option.KeyBinding;
+import net.minecraft.client.util.InputUtil;
 import net.minecraft.text.Text;
 import org.lwjgl.glfw.GLFW;
 
@@ -11,11 +14,11 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class FriendsScreen extends Screen {
-    private enum Tab { FRIENDS, REQUESTS, ADD }
+    private enum Tab { FRIENDS, REQUESTS, ADD, SETTINGS }
 
     private record Row(String name, int kind) {} // 0 = znajomy, 1 = przychodzace, 2 = wyslane
 
-    private static final int PANEL_W = 340;
+    private static final int PANEL_W = 380;
     private static final int LIST_TOP = 50;
     private static final int ROW_H = 24;
 
@@ -28,6 +31,7 @@ public class FriendsScreen extends Screen {
     private int maxPage = 0;
     private int left;
     private int seenVersion;
+    private boolean listening = false;
     private String status = "";
     private boolean statusOk = true;
     private TextFieldWidget nameField;
@@ -44,6 +48,7 @@ public class FriendsScreen extends Screen {
             case REQUESTS -> FriendManager.incoming.isEmpty() ? "Zaproszenia"
                     : "Zaproszenia (" + FriendManager.incoming.size() + ")";
             case ADD -> "Dodaj";
+            case SETTINGS -> "Ustawienia";
         };
     }
 
@@ -62,6 +67,7 @@ public class FriendsScreen extends Screen {
                 lastTab = t;
                 page = 0;
                 status = "";
+                listening = false;
                 clearAndInit();
             }).dimensions(left + i * tw, 20, tw - 2, 20).build();
             b.active = (t != tab);
@@ -71,7 +77,72 @@ public class FriendsScreen extends Screen {
         addDrawableChild(ButtonWidget.builder(Text.literal("Zamknij"), b -> close())
                 .dimensions(width / 2 - 40, height - 26, 80, 20).build());
 
-        if (tab == Tab.ADD) initAdd(); else initList();
+        if (tab == Tab.ADD) initAdd();
+        else if (tab == Tab.SETTINGS) initSettings();
+        else initList();
+    }
+
+    private void initSettings() {
+        Text label = listening ? Text.literal("> nacisnij klawisz <") : FriendsMod.OPEN_KEY.getBoundKeyLocalizedText();
+        addDrawableChild(ButtonWidget.builder(label, b -> {
+            listening = true;
+            clearAndInit();
+        }).dimensions(left + 170, 62, 130, 20).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("Reset"), b -> {
+            setOpenKey(FriendsMod.OPEN_KEY.getDefaultKey());
+            listening = false;
+            clearAndInit();
+        }).dimensions(left + 306, 62, 60, 20).build());
+
+        addDrawableChild(new MeterSlider(left, 100, PANEL_W, 20));
+
+        addDrawableChild(ButtonWidget.builder(
+                Text.literal("Metry nad nickiem: " + (FriendManager.nametagMeters ? "WLACZONE" : "WYLACZONE")), b -> {
+            FriendManager.nametagMeters = !FriendManager.nametagMeters;
+            FriendManager.save();
+            clearAndInit();
+        }).dimensions(left, 126, PANEL_W, 20).build());
+
+        addDrawableChild(ButtonWidget.builder(
+                Text.literal("Znaczniki na ekranie: " + (FriendManager.markers ? "WLACZONE" : "WYLACZONE")), b -> {
+            FriendManager.markers = !FriendManager.markers;
+            FriendManager.save();
+            clearAndInit();
+        }).dimensions(left, 152, PANEL_W, 20).build());
+    }
+
+    /** Suwak: od ilu metrow pokazywac lokalizacje i metry znajomego (0 - 1000, krok 5). */
+    private static class MeterSlider extends SliderWidget {
+        MeterSlider(int x, int y, int w, int h) {
+            super(x, y, w, h, Text.empty(), FriendManager.showFromMeters / 1000.0);
+            updateMessage();
+        }
+
+        private int meters() {
+            return (int) Math.round(value * 200.0) * 5;
+        }
+
+        @Override
+        protected void updateMessage() {
+            setMessage(Text.literal("Pokazuj znajomych od: " + meters() + " m"));
+        }
+
+        @Override
+        protected void applyValue() {
+            FriendManager.showFromMeters = meters();
+        }
+
+        @Override
+        public void onRelease(double mouseX, double mouseY) {
+            super.onRelease(mouseX, mouseY);
+            FriendManager.save();
+        }
+    }
+
+    private void setOpenKey(InputUtil.Key key) {
+        FriendsMod.OPEN_KEY.setBoundKey(key);
+        KeyBinding.updateKeysByCode();
+        client.options.write();
     }
 
     private void initAdd() {
@@ -156,6 +227,12 @@ public class FriendsScreen extends Screen {
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (listening) {
+            if (keyCode != GLFW.GLFW_KEY_ESCAPE) setOpenKey(InputUtil.fromKeyCode(keyCode, scanCode));
+            listening = false;
+            clearAndInit();
+            return true;
+        }
         if (tab == Tab.ADD && nameField != null && nameField.isFocused()
                 && (keyCode == GLFW.GLFW_KEY_ENTER || keyCode == GLFW.GLFW_KEY_KP_ENTER)) {
             submit();
@@ -174,6 +251,13 @@ public class FriendsScreen extends Screen {
         super.render(ctx, mouseX, mouseY, delta); // tlo + widgety
 
         ctx.drawCenteredTextWithShadow(textRenderer, Text.literal("Friends"), width / 2, 6, 0xFFFFFFFF);
+
+        if (tab == Tab.SETTINGS) {
+            ctx.drawTextWithShadow(textRenderer, "Klawisz otwierania menu:", left, 68, 0xFFFFFFFF);
+            ctx.drawTextWithShadow(textRenderer, "Kliknij przycisk, potem nacisnij wybrany klawisz (ESC = anuluj).", left, 87, 0xFF888888);
+            ctx.drawTextWithShadow(textRenderer, "Znaczniki pokazuja kierunek i dystans do znajomych poza zasiegiem renderowania.", left, 180, 0xFF888888);
+            return;
+        }
 
         if (tab == Tab.ADD) {
             ctx.drawTextWithShadow(textRenderer, "Wpisz nick gracza, ktory jest teraz online.", left, 46, 0xFFAAAAAA);
@@ -213,7 +297,7 @@ public class FriendsScreen extends Screen {
                     sub = "online - czekam na lokalizacje";
                     color = 0xFF55FF55;
                 } else if (info.near) {
-                    sub = "w poblizu (do 20 m)";
+                    sub = "w poblizu (do " + FriendManager.showFromMeters + " m)";
                     color = 0xFF55FF55;
                 } else {
                     String where = info.sameDim ? (int) info.dist + " m" : FriendManager.dimLabel(info.dim);
